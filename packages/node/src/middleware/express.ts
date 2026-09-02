@@ -1,31 +1,62 @@
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type {
-  NextFunction,
-  Request,
-  RequestHandler,
-  Response,
-} from "express";
-import type { RBAC, Resource, Subject } from "@corpcash/rbac-core";
-import { createForbiddenResponse } from "../errors/forbidden.js";
+  AuthorizationResult,
+  RBAC,
+  Resource,
+  Subject,
+} from "@corpcash/rbac-core";
+import {
+  createForbiddenResponse,
+  createUnauthorizedResponse,
+} from "../errors/forbidden.js";
+import { warnResourceTypeMismatch } from "../resource.js";
 
 export interface ExpressRBACOptions {
   rbac: RBAC;
-  getSubject: (req: Request) => Subject | null | undefined;
+  getSubject: (
+    req: Request
+  ) => Subject | null | undefined | Promise<Subject | null | undefined>;
+  onUnauthenticated?: (req: Request, res: Response) => void;
   onForbidden?: (
     req: Request,
     res: Response,
-    result: ReturnType<RBAC["authorize"]>
+    result: AuthorizationResult
   ) => void;
 }
 
 export interface AuthorizeOptions {
   resource: string;
   action: string;
+  /**
+   * Loads the resource instance passed to policies. The route's `resource`
+   * always decides which permission is checked; a differing `type` on the
+   * returned instance is overridden and warned about.
+   */
   getResource?: (req: Request) => Resource | undefined;
   getContext?: (req: Request) => Record<string, unknown> | undefined;
 }
 
+function resolveResource(
+  declared: string,
+  instance: Resource | undefined
+): Resource {
+  if (instance === undefined) return declared;
+
+  if (typeof instance === "string") {
+    if (instance !== declared) warnResourceTypeMismatch(declared, instance);
+    return declared;
+  }
+
+  if (instance.type !== declared) {
+    warnResourceTypeMismatch(declared, instance.type);
+    return { ...instance, type: declared };
+  }
+
+  return instance;
+}
+
 export function createExpressMiddleware(options: ExpressRBACOptions) {
-  const { rbac, getSubject, onForbidden } = options;
+  const { rbac, getSubject, onForbidden, onUnauthenticated } = options;
 
   function authorize(
     resourceOrOptions: string | AuthorizeOptions,
@@ -37,37 +68,32 @@ export function createExpressMiddleware(options: ExpressRBACOptions) {
         : resourceOrOptions;
 
     return (req: Request, res: Response, next: NextFunction) => {
-      const subject = getSubject(req);
+      void (async () => {
+        const subject = await getSubject(req);
 
-      if (!subject) {
-        res.status(401).json({
-          statusCode: 401,
-          error: "Unauthorized",
-          message: "Authentication required.",
-        });
-        return;
-      }
-
-      const resource = config.getResource?.(req) ?? config.resource;
-      const context = config.getContext?.(req);
-
-      const result = rbac.authorize({
-        subject,
-        action: config.action,
-        resource,
-        context,
-      });
-
-      if (!result.allowed) {
-        if (onForbidden) {
-          onForbidden(req, res, result);
+        if (!subject?.id) {
+          if (onUnauthenticated) return onUnauthenticated(req, res);
+          res.status(401).json(createUnauthorizedResponse());
           return;
         }
-        res.status(403).json(createForbiddenResponse(undefined, result.reason));
-        return;
-      }
 
-      next();
+        const result = await rbac.authorizeAsync({
+          subject,
+          action: config.action,
+          resource: resolveResource(config.resource, config.getResource?.(req)),
+          context: config.getContext?.(req),
+        });
+
+        if (!result.allowed) {
+          if (onForbidden) return onForbidden(req, res, result);
+          res
+            .status(403)
+            .json(createForbiddenResponse(undefined, result.reason));
+          return;
+        }
+
+        next();
+      })().catch(next);
     };
   }
 

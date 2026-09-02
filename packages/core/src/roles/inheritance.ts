@@ -1,28 +1,56 @@
 import type { RoleDefinition } from "../types/index.js";
+import {
+  CircularRoleInheritanceError,
+  InvalidRBACConfigError,
+  UnknownRoleError,
+} from "../errors.js";
 
-export class CircularRoleInheritanceError extends Error {
-  constructor(cycle: string[]) {
-    super(`Circular role inheritance detected: ${cycle.join(" -> ")}`);
-    this.name = "CircularRoleInheritanceError";
-  }
+export { CircularRoleInheritanceError, UnknownRoleError };
+
+export interface RoleClosure {
+  /** Roles from most-derived (the subject's own roles) to most-base. */
+  order: string[];
+  /** Requested roles that had no definition. */
+  ignored: string[];
 }
 
-export class UnknownRoleError extends Error {
-  constructor(role: string) {
-    super(`Unknown role: "${role}"`);
-    this.name = "UnknownRoleError";
-  }
+export interface ResolveOptions {
+  /** What to do with a role that has no definition. Default `"skip"`. */
+  onUnknownRole?: "throw" | "skip";
 }
 
 /**
- * Resolves role inheritance in topological order.
- * Returns roles from most-derived (subject's direct roles) to most-base.
+ * Walks the full inheritance graph, so a cycle or a dangling `inherits` entry
+ * is reported at construction time rather than on the first request that
+ * happens to touch that branch.
  */
-export function resolveRoleInheritance(
-  roleNames: string[],
+export function validateRoleGraph(
   roleDefinitions: Record<string, RoleDefinition>
-): string[] {
+): void {
+  for (const [role, definition] of Object.entries(roleDefinitions)) {
+    for (const parent of definition.inherits ?? []) {
+      if (!roleDefinitions[parent]) {
+        throw new InvalidRBACConfigError(
+          `Role "${role}" inherits unknown role "${parent}".`
+        );
+      }
+    }
+  }
+
+  resolveRoleInheritance(Object.keys(roleDefinitions), roleDefinitions, {
+    onUnknownRole: "throw",
+  });
+}
+
+/** Resolves role inheritance in topological order. */
+export function resolveRoleInheritance(
+  roleNames: readonly string[],
+  roleDefinitions: Record<string, RoleDefinition>,
+  options: ResolveOptions = {}
+): RoleClosure {
+  const onUnknownRole = options.onUnknownRole ?? "skip";
   const resolved: string[] = [];
+  const ignored: string[] = [];
   const visiting = new Set<string>();
   const visited = new Set<string>();
 
@@ -35,7 +63,10 @@ export function resolveRoleInheritance(
 
     const definition = roleDefinitions[roleName];
     if (!definition) {
-      throw new UnknownRoleError(roleName);
+      if (onUnknownRole === "throw") throw new UnknownRoleError(roleName);
+      if (!ignored.includes(roleName)) ignored.push(roleName);
+      visited.add(roleName);
+      return;
     }
 
     visiting.add(roleName);
@@ -54,15 +85,5 @@ export function resolveRoleInheritance(
   }
 
   // Reverse so most-derived roles come first for permission matching priority
-  return resolved.reverse();
-}
-
-export function resolveSubjectRoles(
-  roleNames: string[],
-  roleDefinitions: Record<string, RoleDefinition>
-): string[] {
-  if (Object.keys(roleDefinitions).length === 0) {
-    return roleNames;
-  }
-  return resolveRoleInheritance(roleNames, roleDefinitions);
+  return { order: resolved.reverse(), ignored };
 }

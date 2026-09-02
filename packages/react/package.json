@@ -3,7 +3,26 @@
   "version": "0.1.0",
   "description": "React hooks and components for @corpcash/rbac-core",
   "license": "MIT",
+  "author": "Corpcash",
+  "homepage": "https://github.com/abhishekp2e/corpcash-rback/tree/main/packages/react#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhishekp2e/corpcash-rback.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/abhishekp2e/corpcash-rback/issues"
+  },
+  "keywords": [
+    "rbac",
+    "authorization",
+    "react",
+    "react-hooks",
+    "permissions",
+    "access-control"
+  ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,11 +38,20 @@
       }
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
-    "lint": "tsc --noEmit"
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "pnpm build && pnpm test:coverage"
   },
   "dependencies": {
     "@corpcash/rbac-core": "workspace:*"
@@ -34,6 +62,7 @@
   "devDependencies": {
     "@testing-library/react": "^16.1.0",
     "@types/react": "^18.3.18",
+    "@vitest/coverage-v8": "^2.1.8",
     "jsdom": "^25.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -41,6 +70,7 @@
     "vitest": "^2.1.8"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }

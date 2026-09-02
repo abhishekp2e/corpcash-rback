@@ -10,6 +10,8 @@ export const rbacConfig: RBACConfig = {
       permissions: [
         "wallet:create",
         "wallet:update",
+        // Granted broadly here; the ownership policy narrows it to own wallets.
+        "wallet:delete",
         "contract:read",
         "contract:deploy",
       ],

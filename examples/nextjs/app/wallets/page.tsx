@@ -31,8 +31,8 @@ export default function WalletsPage() {
       <main style={{ padding: 24, fontFamily: "system-ui" }}>
         <h1>Next.js Wallets (App Router)</h1>
         <p>
-          RBACProvider wraps protected UI. Backend must enforce authorization
-          on API routes.
+          RBACProvider wraps protected UI. Backend must enforce authorization on
+          API routes.
         </p>
         <WalletActions />
       </main>

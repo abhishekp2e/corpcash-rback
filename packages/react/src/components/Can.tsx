@@ -54,7 +54,11 @@ export interface RequireRoleProps {
   children: ReactNode;
 }
 
-export function RequireRole({ role, fallback = null, children }: RequireRoleProps) {
+export function RequireRole({
+  role,
+  fallback = null,
+  children,
+}: RequireRoleProps) {
   const hasRole = useRole(role);
   return hasRole ? <>{children}</> : <>{fallback}</>;
 }

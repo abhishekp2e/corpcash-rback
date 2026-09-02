@@ -2,30 +2,54 @@ import express, { type Request } from "express";
 import { createRBAC } from "@corpcash/rbac-node";
 import { createExpressMiddleware } from "@corpcash/rbac-node/express";
 import { rbacConfig, demoUsers } from "../../shared/rbac.config.js";
+import { findWalletById, listWallets } from "../../shared/wallets.store.js";
 
 const app = express();
 app.use(express.json());
 
-const rbac = createRBAC(rbacConfig);
+// The audit hook sees every decision, allowed or denied. Point it at your
+// logger; anything it throws is swallowed so it cannot change a decision.
+const rbac = createRBAC({
+  ...rbacConfig,
+  onDecision: ({ request, result, durationMs }) => {
+    console.log(
+      JSON.stringify({
+        event: "authorization",
+        subject: request.subject.id,
+        action: result.action,
+        resource: result.resource,
+        allowed: result.allowed,
+        reason: result.reason,
+        matchedRole: result.matchedRole,
+        ignoredRoles: result.ignoredRoles,
+        durationMs,
+      })
+    );
+  },
+});
 
-rbac.registerPolicyFor("wallet", "delete", ({ subject, resource }) => {
-  if (typeof resource === "object" && "ownerId" in resource) {
-    return subject.id === resource.ownerId;
-  }
-  return true;
+// An ownership policy that has to load the wallet first. Policies may return a
+// promise; the middleware awaits them.
+rbac.registerPolicyFor("wallet", "delete", async ({ subject, resource }) => {
+  if (typeof resource !== "object") return false;
+
+  const wallet = await findWalletById(String(resource.id));
+  if (!wallet) return false;
+
+  return wallet.ownerId === subject.id;
 });
 
 const { authorize } = createExpressMiddleware({
   rbac,
-  getSubject: (req: Request) => req.headers["x-user-id"] as string | undefined
-    ? demoUsers[
-        req.headers["x-user-id"] as keyof typeof demoUsers
-      ] ?? null
-    : null,
+  getSubject: (req: Request) => {
+    const userId = req.headers["x-user-id"] as
+      keyof typeof demoUsers | undefined;
+    return userId ? (demoUsers[userId] ?? null) : null;
+  },
 });
 
 app.get("/wallets", authorize("wallet", "read"), (_req, res) => {
-  res.json([{ id: "wallet_1", ownerId: "dev-1" }]);
+  res.json(listWallets());
 });
 
 app.post("/wallets", authorize("wallet", "create"), (_req, res) => {
@@ -37,10 +61,11 @@ app.delete(
   authorize({
     resource: "wallet",
     action: "delete",
+    // Supplies the instance the policy reasons about. The route's "wallet"
+    // still decides which permission is checked.
     getResource: (req: Request) => ({
       type: "wallet",
       id: String(req.params.id),
-      ownerId: (req.headers["x-wallet-owner"] as string) ?? "dev-1",
     }),
   }),
   (req, res) => {
@@ -58,6 +83,8 @@ app.get("/me/authorization", (req, res) => {
   res.json({
     user: subject,
     roles: subject.roles,
+    // Expands roles and inheritance but not policies, so treat it as an upper
+    // bound on what the API will actually allow.
     permissions: rbac.getEffectivePermissions(subject),
   });
 });
@@ -65,5 +92,14 @@ app.get("/me/authorization", (req, res) => {
 const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`Express example running on http://localhost:${PORT}`);
-  console.log("Try: curl -H 'x-user-id: developer' http://localhost:3001/wallets");
+  console.log("\nTry:");
+  console.log("  curl -H 'x-user-id: developer' http://localhost:3001/wallets");
+  console.log(
+    "  curl -X DELETE -H 'x-user-id: admin' http://localhost:3001/wallets/wallet_1" +
+      "   # 403: admin has *:* but does not own it"
+  );
+  console.log(
+    "  curl -X DELETE -H 'x-user-id: developer' http://localhost:3001/wallets/wallet_1" +
+      "   # 200: owner"
+  );
 });

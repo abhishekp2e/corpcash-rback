@@ -3,7 +3,27 @@
   "version": "0.1.0",
   "description": "Node.js adapters for @corpcash/rbac-core (Express, NestJS)",
   "license": "MIT",
+  "author": "Corpcash",
+  "homepage": "https://github.com/abhishekp2e/corpcash-rback/tree/main/packages/node#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhishekp2e/corpcash-rback.git",
+    "directory": "packages/node"
+  },
+  "bugs": {
+    "url": "https://github.com/abhishekp2e/corpcash-rback/issues"
+  },
+  "keywords": [
+    "rbac",
+    "authorization",
+    "express",
+    "express-middleware",
+    "nestjs",
+    "nestjs-guard",
+    "access-control"
+  ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -39,11 +59,30 @@
       }
     }
   },
-  "files": ["dist"],
+  "typesVersions": {
+    "*": {
+      "express": [
+        "./dist/express.d.ts"
+      ],
+      "nestjs": [
+        "./dist/nestjs.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
-    "lint": "tsc --noEmit"
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "pnpm build && pnpm test:coverage"
   },
   "dependencies": {
     "@corpcash/rbac-core": "workspace:*"
@@ -54,15 +93,23 @@
     "express": ">=4.0.0"
   },
   "peerDependenciesMeta": {
-    "@nestjs/common": { "optional": true },
-    "@nestjs/core": { "optional": true },
-    "express": { "optional": true }
+    "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/platform-express": "^10.4.15",
     "@types/express": "^5.0.0",
     "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "^2.1.8",
     "express": "^4.21.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -71,6 +118,7 @@
     "vitest": "^2.1.8"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }

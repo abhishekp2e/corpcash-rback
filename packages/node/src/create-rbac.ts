@@ -5,4 +5,9 @@ export function createRBAC(config: RBACConfig): RBAC {
 }
 
 export { RBAC };
-export type { RBACConfig, Subject, AuthorizationResult } from "@corpcash/rbac-core";
+export type {
+  AuthorizationDecision,
+  AuthorizationResult,
+  RBACConfig,
+  Subject,
+} from "@corpcash/rbac-core";

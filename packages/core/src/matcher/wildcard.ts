@@ -17,7 +17,7 @@ export function matchesPermission(
 }
 
 export function findMatchingPermission(
-  permissions: ParsedPermission[],
+  permissions: readonly ParsedPermission[],
   requestedResource: string,
   requestedAction: string
 ): ParsedPermission | undefined {

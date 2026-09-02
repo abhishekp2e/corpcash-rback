@@ -1,21 +1,31 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   type ReactNode,
 } from "react";
-import { RBAC, type Resource, type Subject } from "@corpcash/rbac-core";
+import {
+  RBAC,
+  type RBACConfig,
+  type Resource,
+  type Subject,
+} from "@corpcash/rbac-core";
 
 export interface RBACContextValue {
   rbac: RBAC;
   subject: Subject;
+  /** Entries of `permissions` that were not valid `resource:action` strings. */
+  invalidPermissions: readonly string[];
 }
 
 export interface RBACProviderProps {
   subject: Subject;
+  /** Effective permissions from the backend. Malformed entries are skipped, not thrown. */
   permissions?: string[];
-  roles?: Record<string, { permissions?: string[]; inherits?: string[] }>;
-  policies?: never;
+  roles?: RBACConfig["roles"];
+  /** Called once per render pass when `permissions` contains unusable entries. */
+  onInvalidPermissions?: (invalid: readonly string[]) => void;
   children: ReactNode;
 }
 
@@ -25,30 +35,43 @@ export function RBACProvider({
   subject,
   permissions,
   roles,
+  onInvalidPermissions,
   children,
 }: RBACProviderProps) {
+  // Keyed on content, not array identity, so an inline literal does not rebuild
+  // the engine on every render.
+  const permissionKey = permissions?.join("\u0000");
+  const roleKey = roles ? JSON.stringify(roles) : undefined;
+
+  // Deps are the content keys, not the props themselves, so an inline array or
+  // object literal does not rebuild the engine on every render.
   const rbac = useMemo(() => {
-    if (permissions) {
-      return new RBAC({ permissions });
-    }
-    if (roles) {
-      return new RBAC({ roles });
-    }
+    if (permissions) return new RBAC({ permissions });
+    if (roles) return new RBAC({ roles });
     return new RBAC({ permissions: [] });
-  }, [permissions, roles]);
+  }, [permissionKey, roleKey]);
+
+  const invalidPermissions = rbac.invalidPermissions;
+
+  useEffect(() => {
+    if (invalidPermissions.length > 0)
+      onInvalidPermissions?.(invalidPermissions);
+  }, [invalidPermissions, onInvalidPermissions]);
 
   const value = useMemo(
-    () => ({ rbac, subject }),
-    [rbac, subject]
+    () => ({ rbac, subject, invalidPermissions }),
+    [rbac, subject, invalidPermissions]
   );
 
-  return (
-    <RBACContext.Provider value={value}>{children}</RBACContext.Provider>
-  );
+  return <RBACContext.Provider value={value}>{children}</RBACContext.Provider>;
 }
 
 export function useRBAC(): RBACContextValue & {
-  can: (resource: string, action: string, resourceInstance?: Resource) => boolean;
+  can: (
+    resource: string,
+    action: string,
+    resourceInstance?: Resource
+  ) => boolean;
 } {
   const ctx = useContext(RBACContext);
   if (!ctx) {
@@ -71,7 +94,8 @@ export function useCan(
   return can(resource, action, resourceInstance);
 }
 
+/** Includes inherited roles when the provider was given a role config. */
 export function useRole(roleName: string): boolean {
-  const { subject } = useRBAC();
-  return subject.roles.includes(roleName);
+  const { rbac, subject } = useRBAC();
+  return rbac.hasRole(subject, roleName);
 }

@@ -54,20 +54,21 @@ function Dashboard() {
     <div style={{ fontFamily: "system-ui", padding: 24 }}>
       <h1>Wallet Dashboard</h1>
       <p>Admin role: {isAdmin ? "yes" : "no"}</p>
-
       <h2>Navigation</h2>
       <NavMenu />
-
       <h2>Actions</h2>
       <Can resource="wallet" action="create">
         <button>Create Wallet</button>
       </Can>{" "}
-      <Can resource="wallet" action="delete" fallback={<span>No delete access</span>}>
+      <Can
+        resource="wallet"
+        action="delete"
+        fallback={<span>No delete access</span>}
+      >
         <button>Delete Wallet</button>
       </Can>{" "}
       {canCreateWallet && <span>(can create via hook)</span>}
       {canDeployContract && <button>Deploy Contract</button>}
-
       <RequirePermission
         resource="wallet"
         action="read"

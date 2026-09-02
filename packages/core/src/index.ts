@@ -2,9 +2,11 @@ export { RBAC } from "./rbac.js";
 
 export type {
   Action,
+  AuthorizationDecision,
   AuthorizationReason,
   AuthorizationRequest,
   AuthorizationResult,
+  DecisionListener,
   PolicyContext,
   PolicyFn,
   RBACConfig,
@@ -15,10 +17,17 @@ export type {
 } from "./types/index.js";
 
 export {
+  AsyncPolicyError,
   CircularRoleInheritanceError,
+  InvalidPermissionError,
+  InvalidRBACConfigError,
   UnknownRoleError,
-} from "./roles/inheritance.js";
+} from "./errors.js";
 
-export { parsePermission, formatPermission } from "./permissions/parse.js";
+export {
+  formatPermission,
+  parsePermission,
+  tryParsePermission,
+} from "./permissions/parse.js";
 
 export { getResourceType } from "./types/index.js";

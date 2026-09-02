@@ -1,6 +1,13 @@
 node_modules
 dist
 .turbo
+.next
+*.tsbuildinfo
 *.log
 .DS_Store
 coverage
+
+# Never commit credentials
+.npmrc
+.env
+.env.*
