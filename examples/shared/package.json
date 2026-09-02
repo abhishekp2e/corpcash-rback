@@ -1,0 +1,11 @@
+{
+  "name": "example-shared",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'shared config only'"
+  },
+  "dependencies": {
+    "@corpcash/rbac-core": "workspace:*"
+  }
+}
