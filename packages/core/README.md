@@ -48,6 +48,19 @@ const result = rbac.authorize({
 // { allowed, reason, matchedRole, matchedPermission, ignoredRoles? }
 ```
 
+## Reload after a config change
+
+`reload()` replaces the compiled role graph or permission list. Registered
+policies and `onDecision` stay attached. If the new config is invalid the
+previous compiled state is left in place.
+
+```typescript
+rbac.reload(await store.loadConfig());
+```
+
+To persist that config, use [`@corpcash/rbac-store`](../store) and
+`reloadFromStore(rbac, store)` after admin writes.
+
 ## Configuration is validated at construction
 
 `new RBAC(...)` throws immediately on a bad configuration, so a broken deploy

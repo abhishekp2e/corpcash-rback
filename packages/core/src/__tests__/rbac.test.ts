@@ -498,3 +498,48 @@ describe("effective roles and permissions", () => {
     ]);
   });
 });
+
+describe("reload", () => {
+  it("replaces the role graph without dropping policies or onDecision", () => {
+    const onDecision = vi.fn();
+    const rbac = new RBAC({ ...rbacConfig, onDecision });
+    rbac.registerPolicyFor("wallet", "read", () => false);
+
+    expect(rbac.can(viewer, "read", "wallet")).toBe(false);
+    expect(onDecision).toHaveBeenCalledOnce();
+
+    rbac.reload({
+      roles: {
+        viewer: { permissions: ["wallet:read", "wallet:delete"] },
+      },
+    });
+
+    expect(rbac.can(viewer, "delete", "wallet")).toBe(true);
+    expect(rbac.can(viewer, "read", "wallet")).toBe(false);
+    expect(onDecision).toHaveBeenCalledTimes(3);
+  });
+
+  it("leaves the previous compiled state when the new config is invalid", () => {
+    const rbac = new RBAC(rbacConfig);
+
+    expect(() =>
+      rbac.reload({
+        roles: {
+          child: { inherits: ["missing"], permissions: ["wallet:read"] },
+        },
+      })
+    ).toThrow(InvalidRBACConfigError);
+
+    expect(rbac.can(viewer, "read", "wallet")).toBe(true);
+    expect(rbac.can(developer, "create", "wallet")).toBe(true);
+  });
+
+  it("can switch from roles to permission-only mode", () => {
+    const rbac = new RBAC(rbacConfig);
+    rbac.reload({ permissions: ["wallet:read"] });
+
+    const subject = { id: "u1", roles: ["admin"] };
+    expect(rbac.can(subject, "read", "wallet")).toBe(true);
+    expect(rbac.can(subject, "delete", "wallet")).toBe(false);
+  });
+});

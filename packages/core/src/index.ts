@@ -1,4 +1,5 @@
 export { RBAC } from "./rbac.js";
+export type { RBACReloadConfig } from "./rbac.js";
 
 export type {
   Action,
@@ -15,6 +16,8 @@ export type {
   RoleDefinition,
   Subject,
 } from "./types/index.js";
+
+export { validateRoleGraph } from "./roles/inheritance.js";
 
 export {
   AsyncPolicyError,

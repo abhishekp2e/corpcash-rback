@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "check:packages": "for pkg in core node react; do pnpm exec publint packages/$pkg && pnpm exec attw --pack packages/$pkg || exit 1; done",
+    "check:packages": "for pkg in core node react store; do pnpm exec publint packages/$pkg && pnpm exec attw --pack packages/$pkg || exit 1; done",
     "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm test:coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",

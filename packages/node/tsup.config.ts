@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
-    express: "src/middleware/express.ts",
+    express: "src/express.ts",
     nestjs: "src/nestjs/index.ts",
   },
   format: ["cjs", "esm"],
@@ -16,5 +16,6 @@ export default defineConfig({
     "@nestjs/core",
     "rxjs",
     "reflect-metadata",
+    "@corpcash/rbac-store",
   ],
 });

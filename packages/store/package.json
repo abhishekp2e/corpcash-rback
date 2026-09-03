@@ -1,14 +1,14 @@
 {
-  "name": "@corpcash/rbac-node",
+  "name": "@corpcash/rbac-store",
   "version": "0.2.0",
-  "description": "Node.js adapters for @corpcash/rbac-core (Express, NestJS)",
+  "description": "Database adapters for persisting @corpcash/rbac-core role graphs",
   "license": "MIT",
   "author": "Corpcash",
-  "homepage": "https://github.com/abhishekp2e/corpcash-rback/tree/main/packages/node#readme",
+  "homepage": "https://github.com/abhishekp2e/corpcash-rback/tree/main/packages/store#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/abhishekp2e/corpcash-rback.git",
-    "directory": "packages/node"
+    "directory": "packages/store"
   },
   "bugs": {
     "url": "https://github.com/abhishekp2e/corpcash-rback/issues"
@@ -16,10 +16,9 @@
   "keywords": [
     "rbac",
     "authorization",
-    "express",
-    "express-middleware",
-    "nestjs",
-    "nestjs-guard",
+    "postgres",
+    "mysql",
+    "mongodb",
     "access-control"
   ],
   "type": "module",
@@ -38,34 +37,47 @@
         "default": "./dist/index.cjs"
       }
     },
-    "./express": {
+    "./postgres": {
       "import": {
-        "types": "./dist/express.d.ts",
-        "default": "./dist/express.js"
+        "types": "./dist/postgres.d.ts",
+        "default": "./dist/postgres.js"
       },
       "require": {
-        "types": "./dist/express.d.cts",
-        "default": "./dist/express.cjs"
+        "types": "./dist/postgres.d.cts",
+        "default": "./dist/postgres.cjs"
       }
     },
-    "./nestjs": {
+    "./mysql": {
       "import": {
-        "types": "./dist/nestjs.d.ts",
-        "default": "./dist/nestjs.js"
+        "types": "./dist/mysql.d.ts",
+        "default": "./dist/mysql.js"
       },
       "require": {
-        "types": "./dist/nestjs.d.cts",
-        "default": "./dist/nestjs.cjs"
+        "types": "./dist/mysql.d.cts",
+        "default": "./dist/mysql.cjs"
+      }
+    },
+    "./mongodb": {
+      "import": {
+        "types": "./dist/mongodb.d.ts",
+        "default": "./dist/mongodb.js"
+      },
+      "require": {
+        "types": "./dist/mongodb.d.cts",
+        "default": "./dist/mongodb.cjs"
       }
     }
   },
   "typesVersions": {
     "*": {
-      "express": [
-        "./dist/express.d.ts"
+      "postgres": [
+        "./dist/postgres.d.ts"
       ],
-      "nestjs": [
-        "./dist/nestjs.d.ts"
+      "mysql": [
+        "./dist/mysql.d.ts"
+      ],
+      "mongodb": [
+        "./dist/mongodb.d.ts"
       ]
     }
   },
@@ -85,36 +97,30 @@
     "prepublishOnly": "pnpm build && pnpm test:coverage"
   },
   "dependencies": {
-    "@corpcash/rbac-core": "workspace:*",
-    "@corpcash/rbac-store": "workspace:*"
+    "@corpcash/rbac-core": "workspace:*"
   },
   "peerDependencies": {
-    "@nestjs/common": ">=10.0.0",
-    "@nestjs/core": ">=10.0.0",
-    "express": ">=4.0.0"
+    "mongodb": ">=6.0.0",
+    "mysql2": ">=3.0.0",
+    "pg": ">=8.0.0"
   },
   "peerDependenciesMeta": {
-    "@nestjs/common": {
+    "mongodb": {
       "optional": true
     },
-    "@nestjs/core": {
+    "mysql2": {
       "optional": true
     },
-    "express": {
+    "pg": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@nestjs/common": "^10.4.15",
-    "@nestjs/core": "^10.4.15",
-    "@nestjs/platform-express": "^10.4.15",
-    "@types/express": "^5.0.0",
-    "@types/supertest": "^6.0.2",
+    "@types/pg": "^8.15.5",
     "@vitest/coverage-v8": "^2.1.8",
-    "express": "^4.21.2",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1",
-    "supertest": "^7.0.0",
+    "mongodb": "^6.16.0",
+    "mysql2": "^3.14.1",
+    "pg": "^8.16.0",
     "tsup": "^8.3.5",
     "vitest": "^2.1.8"
   },

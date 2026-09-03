@@ -12,12 +12,15 @@ import {
   RBAC_INSTANCE,
   RBAC_PERMISSION_KEY,
   RBAC_PUBLIC_KEY,
+  RBAC_STORE,
   PublicRoute,
+  RbacAdminModule,
   RbacGuard,
   RbacModule,
   RequirePermission,
   type PermissionMetadata,
 } from "../nestjs/index.js";
+import { memoryStore } from "@corpcash/rbac-store";
 
 interface HandlerMetadata {
   permission?: PermissionMetadata;
@@ -347,5 +350,38 @@ describe("RbacModule.forRoot", () => {
 
     rbac.can(viewer, "read", "wallet");
     expect(onDecision).toHaveBeenCalledOnce();
+  });
+});
+
+describe("RbacModule.forRootAsync", () => {
+  it("loads roles from a store and exports the store token", async () => {
+    const store = memoryStore();
+    await store.migrate();
+    await store.seed(rbacConfig);
+
+    const moduleDef = RbacModule.forRootAsync({
+      store,
+      getSubject: () => viewer,
+      configure: (instance) =>
+        instance.registerPolicyFor("wallet", "delete", () => false),
+    });
+    const providers = moduleDef.providers as unknown as FactoryProvider[];
+    const instance = providers.find(
+      (provider) => provider.provide === RBAC_INSTANCE
+    )!;
+    const storeProvider = providers.find(
+      (provider) => provider.provide === RBAC_STORE
+    )!;
+
+    expect(storeProvider.useValue).toBe(store);
+    const rbac = (await instance.useFactory?.()) as RBAC;
+    expect(rbac.can(viewer, "read", "wallet")).toBe(true);
+    expect(rbac.can(admin, "delete", "wallet")).toBe(false);
+  });
+
+  it("registers the admin module", () => {
+    const moduleDef = RbacAdminModule.register();
+    expect(moduleDef.module).toBe(RbacAdminModule);
+    expect(moduleDef.controllers).toBeDefined();
   });
 });

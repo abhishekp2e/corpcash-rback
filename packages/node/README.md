@@ -6,6 +6,8 @@ Node.js adapters for `@corpcash/rbac-core`.
 
 ```bash
 npm install @corpcash/rbac-node @corpcash/rbac-core
+# optional, for database-backed roles
+npm install @corpcash/rbac-store pg
 ```
 
 ## Express
@@ -140,6 +142,76 @@ RbacModule.forRoot({
 
 The guard throws `UnauthorizedException` when there is no subject and
 `ForbiddenException` when the engine denies, with the deny `reason` attached.
+
+## Database-backed config
+
+Load roles from [`@corpcash/rbac-store`](../store) and mount the admin API.
+Every admin route requires `rbac:manage` (or `*:*`). Seed an `admin` role with
+`*:*` (or grant `rbac:manage` explicitly) before calling the API.
+
+### Express
+
+```typescript
+import { createRBACFromStore } from "@corpcash/rbac-store";
+import { postgresStore } from "@corpcash/rbac-store/postgres";
+import {
+  createExpressMiddleware,
+  createRbacAdminRouter,
+} from "@corpcash/rbac-node/express";
+
+const store = postgresStore({ connectionString: process.env.DATABASE_URL });
+await store.migrate();
+await store.seed({ roles });
+const rbac = await createRBACFromStore(store, { onDecision });
+
+app.use("/rbac", createRbacAdminRouter({ store, rbac, getSubject }));
+```
+
+If `getSubject` is omitted, the router reads `x-user-id` and loads that
+subject's roles from the store.
+
+| Method | Path                             | Body                                |
+| ------ | -------------------------------- | ----------------------------------- |
+| GET    | `/rbac/roles`                    |                                     |
+| POST   | `/rbac/roles`                    | `{ name, permissions?, inherits? }` |
+| GET    | `/rbac/roles/:name`              |                                     |
+| PUT    | `/rbac/roles/:name`              | `{ permissions?, inherits? }`       |
+| DELETE | `/rbac/roles/:name`              |                                     |
+| GET    | `/rbac/subjects/:id/roles`       |                                     |
+| PUT    | `/rbac/subjects/:id/roles`       | `{ roles: string[] }`               |
+| POST   | `/rbac/subjects/:id/roles`       | `{ role }`                          |
+| DELETE | `/rbac/subjects/:id/roles/:role` |                                     |
+| GET    | `/rbac/settings`                 |                                     |
+| PATCH  | `/rbac/settings`                 | `{ strictRoles?: boolean }`         |
+
+Role-graph writes reload the in-memory engine. Assignment writes do not — the
+next `getSubject` reads them from the store.
+
+### NestJS
+
+```typescript
+import {
+  RbacModule,
+  RbacAdminModule,
+  RbacGuard,
+} from "@corpcash/rbac-node/nestjs";
+
+@Module({
+  imports: [
+    RbacModule.forRootAsync({
+      store,
+      getSubject: (ctx) => ctx.switchToHttp().getRequest().user,
+      configure: (rbac) => rbac.registerPolicyFor("wallet", "delete", policy),
+    }),
+    RbacAdminModule.register(),
+  ],
+  providers: [{ provide: APP_GUARD, useExisting: RbacGuard }],
+})
+export class AppModule {}
+```
+
+`forRootAsync` loads `store.loadConfig()` at startup. `RbacAdminModule`
+exposes the same `/rbac` routes as the Express router.
 
 ## Auditing
 

@@ -6,6 +6,13 @@ export type {
   Subject,
 } from "./create-rbac.js";
 export {
+  createRBACFromStore,
+  createStoreSubjectResolver,
+  memoryStore,
+  reloadFromStore,
+} from "@corpcash/rbac-store";
+export type { RBACStore, StoredRBACConfig } from "@corpcash/rbac-store";
+export {
   createForbiddenResponse,
   createUnauthorizedResponse,
 } from "./errors/forbidden.js";

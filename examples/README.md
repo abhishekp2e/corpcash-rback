@@ -1,6 +1,6 @@
 # Examples
 
-Four runnable apps. The two API examples share one role configuration and one
+Five runnable apps. The two API examples share one role configuration and one
 wallet store so their behaviour can be compared side by side; the two UI
 examples run in permission-only mode, which is how a browser should use this
 library.
@@ -16,6 +16,7 @@ pnpm build          # the examples consume the built packages
 | [`nestjs`](./nestjs)   | `pnpm --filter example-nestjs dev`  | `http://localhost:3002` | Global guard, deny-by-default, `@PublicRoute()`, `configure` |
 | [`react`](./react)     | `pnpm --filter example-react dev`   | `http://localhost:5173` | `useCan`, `useRole`, `<Can>`, `<RequirePermission>`          |
 | [`nextjs`](./nextjs)   | `pnpm --filter example-nextjs dev`  | `http://localhost:3003` | App Router with the provider in a client component           |
+| [`store`](./store)     | `pnpm --filter example-store dev`   | `http://localhost:3004` | DB-backed roles, assignments, and the `/rbac` admin API      |
 
 ## Shared setup (API examples)
 
@@ -103,6 +104,25 @@ at startup.
 The same wiring is covered end to end in
 [`packages/node/src/__tests__/nestjs.e2e.test.ts`](../packages/node/src/__tests__/nestjs.e2e.test.ts),
 which boots a real application and asserts each of these responses.
+
+## Store
+
+[`store/src/index.ts`](./store/src/index.ts) persists the shared role config
+through `@corpcash/rbac-store`. It uses `memoryStore()` unless `DATABASE_URL` is
+set, in which case it uses Postgres. Demo users are written as assignments, and
+`/rbac` is the admin API (`rbac:manage` via the admin `*:*` role).
+
+```bash
+pnpm --filter example-store dev
+# or DATABASE_URL=postgres://… pnpm --filter example-store dev
+
+curl -H 'x-user-id: admin' http://localhost:3004/rbac/roles
+curl -X POST -H 'x-user-id: admin' -H 'content-type: application/json' \
+  http://localhost:3004/rbac/roles \
+  -d '{"name":"auditor","permissions":["wallet:read"]}'
+```
+
+See [`store/README.md`](./store/README.md) for more.
 
 ## React and Next.js
 

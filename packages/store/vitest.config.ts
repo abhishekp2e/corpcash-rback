@@ -9,9 +9,10 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: [
         "src/**/__tests__/**",
-        "src/express.ts",
         "src/index.ts",
-        "src/create-rbac.ts",
+        "src/postgres.ts",
+        "src/mysql.ts",
+        "src/mongodb.ts",
       ],
       thresholds: {
         statements: 90,

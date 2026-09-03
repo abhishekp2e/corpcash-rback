@@ -4,11 +4,12 @@ A TypeScript-first RBAC authorization library for Node.js and React.
 
 ## Packages
 
-| Package                                    | Description                             |
-| ------------------------------------------ | --------------------------------------- |
-| [`@corpcash/rbac-core`](./packages/core)   | Framework-agnostic authorization engine |
-| [`@corpcash/rbac-node`](./packages/node)   | Express middleware and NestJS guards    |
-| [`@corpcash/rbac-react`](./packages/react) | React provider, hooks, and components   |
+| Package                                    | Description                                            |
+| ------------------------------------------ | ------------------------------------------------------ |
+| [`@corpcash/rbac-core`](./packages/core)   | Framework-agnostic authorization engine                |
+| [`@corpcash/rbac-node`](./packages/node)   | Express middleware and NestJS guards                   |
+| [`@corpcash/rbac-store`](./packages/store) | Persist roles and assignments (Postgres, MySQL, Mongo) |
+| [`@corpcash/rbac-react`](./packages/react) | React provider, hooks, and components                  |
 
 ## Architecture
 
@@ -17,14 +18,15 @@ One authorization engine (`rbac-core`) with thin integration layers for Node and
 **subject + action + resource + context → allow/deny**
 
 ```
-                    @corpcash/rbac-core
-                           │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-       @corpcash/rbac-node      @corpcash/rbac-react
-              │                         │
-         Backend API               React UI
-         (security)                (UX only)
+                         @corpcash/rbac-core
+                                │
+           ┌────────────────────┼────────────────────┐
+           ▼                    ▼                    ▼
+  @corpcash/rbac-node   @corpcash/rbac-store   @corpcash/rbac-react
+           │                    │                    │
+      Backend API        Postgres / MySQL /      React UI
+      (security)              Mongo              (UX only)
+                         roles + assignments
 ```
 
 ## Quick Start
@@ -122,6 +124,29 @@ forgotten decorator cannot open an endpoint. Mark deliberate exceptions with
 convention. Scope the guard per controller with `@UseGuards(RbacGuard)` instead
 if you would rather adopt it gradually.
 
+## Persist config in a database
+
+Roles, inheritance, `strictRoles`, and subject-role assignments can live in
+PostgreSQL, MySQL, or MongoDB. The engine stays in memory; call `reload()` after
+a role-graph write. Policies, `onDecision`, and HTTP adapters stay in
+application code. See [`@corpcash/rbac-store`](./packages/store).
+
+```typescript
+import { createRBACFromStore } from "@corpcash/rbac-store";
+import { postgresStore } from "@corpcash/rbac-store/postgres";
+import { createRbacAdminRouter } from "@corpcash/rbac-node/express";
+
+const store = postgresStore({ connectionString: process.env.DATABASE_URL });
+await store.migrate();
+await store.seed(rbacConfig);
+
+const rbac = await createRBACFromStore(store);
+app.use("/rbac", createRbacAdminRouter({ store, rbac }));
+```
+
+Every admin route requires `rbac:manage` (or `*:*`). Subject assignments are
+read per request, so they apply without a reload.
+
 ## React
 
 ```tsx
@@ -142,13 +167,14 @@ Define roles once on the backend. Send **effective permissions** to the frontend
 
 ## Examples
 
-Four runnable apps — see [`examples/README.md`](./examples/README.md) for the
+Five runnable apps — see [`examples/README.md`](./examples/README.md) for the
 shared role setup and the request-by-request results.
 
 | Example                                  | Shows                                                        |
 | ---------------------------------------- | ------------------------------------------------------------ |
 | [`examples/express`](./examples/express) | Middleware, async ownership policy, audit hook               |
 | [`examples/nestjs`](./examples/nestjs)   | Global guard, deny-by-default, `@PublicRoute()`, `configure` |
+| [`examples/store`](./examples/store)     | DB-backed roles, assignments, and the `/rbac` admin API      |
 | [`examples/react`](./examples/react)     | `useCan`, `useRole`, `<Can>`, role switcher                  |
 | [`examples/nextjs`](./examples/nextjs)   | App Router with the provider in a client component           |
 
@@ -165,9 +191,10 @@ pnpm --filter @corpcash/rbac-core bench
 pnpm changeset         # describe your change; releases are driven by changesets
 ```
 
-99 tests cover the three packages, including an end-to-end suite that boots a
-real NestJS application over HTTP. Run one package's suite with
-`pnpm --filter @corpcash/rbac-node test`.
+Tests cover the four packages, including an end-to-end suite that boots a real
+NestJS application over HTTP and a store contract suite (live Postgres / MySQL /
+Mongo when `TEST_DATABASE_URL`, `TEST_MYSQL_URL`, or `TEST_MONGO_URL` is set).
+Run one package's suite with `pnpm --filter @corpcash/rbac-store test`.
 
 ## License
 

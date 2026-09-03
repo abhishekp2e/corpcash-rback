@@ -2,25 +2,39 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Global,
   Injectable,
   Module,
-  SetMetadata,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { RBAC, RBACConfig, Resource, Subject } from "@corpcash/rbac-core";
+import { createRBACFromStore, type RBACStore } from "@corpcash/rbac-store";
 import { createRBAC } from "../create-rbac.js";
 import { warnResourceTypeMismatch } from "../resource.js";
+import { RbacAdminController } from "./admin.js";
+import { type PermissionMetadata } from "./decorators.js";
+import {
+  RBAC_GUARD_OPTIONS,
+  RBAC_INSTANCE,
+  RBAC_PERMISSION_KEY,
+  RBAC_PUBLIC_KEY,
+  RBAC_STORE,
+} from "./tokens.js";
 
-export const RBAC_PERMISSION_KEY = "rbac:permission";
-export const RBAC_PUBLIC_KEY = "rbac:public";
-export const RBAC_INSTANCE = "RBAC_INSTANCE";
-export const RBAC_GUARD_OPTIONS = "RBAC_GUARD_OPTIONS";
-
-export interface PermissionMetadata {
-  resource: string;
-  action: string;
-}
+export {
+  PublicRoute,
+  RequirePermission,
+  type PermissionMetadata,
+} from "./decorators.js";
+export {
+  RBAC_GUARD_OPTIONS,
+  RBAC_INSTANCE,
+  RBAC_PERMISSION_KEY,
+  RBAC_PUBLIC_KEY,
+  RBAC_STORE,
+} from "./tokens.js";
+export { RbacAdminController } from "./admin.js";
 
 export interface NestRbacModuleOptions {
   roles?: RBACConfig["roles"];
@@ -42,25 +56,20 @@ export interface NestRbacModuleOptions {
    */
   denyUnannotatedRoutes?: boolean;
   /** Runs against the RBAC instance at startup — register policies here. */
-  configure?: (rbac: RBAC) => void;
+  configure?: (rbac: RBAC) => void | Promise<void>;
+}
+
+export interface NestRbacModuleAsyncOptions extends Omit<
+  NestRbacModuleOptions,
+  "roles" | "permissions" | "strictRoles"
+> {
+  store: RBACStore;
 }
 
 type GuardOptions = Pick<
   NestRbacModuleOptions,
   "getSubject" | "getResource" | "getContext" | "denyUnannotatedRoutes"
 >;
-
-export function RequirePermission(
-  resource: string,
-  action: string
-): MethodDecorator & ClassDecorator {
-  return SetMetadata(RBAC_PERMISSION_KEY, { resource, action });
-}
-
-/** Exempts a handler from `denyUnannotatedRoutes`. */
-export function PublicRoute(): MethodDecorator & ClassDecorator {
-  return SetMetadata(RBAC_PUBLIC_KEY, true);
-}
 
 @Injectable()
 export class RbacGuard implements CanActivate {
@@ -151,6 +160,31 @@ export class RbacGuard implements CanActivate {
   }
 }
 
+function guardOptionsFrom(
+  options: Pick<
+    NestRbacModuleOptions,
+    "getSubject" | "getResource" | "getContext" | "denyUnannotatedRoutes"
+  >
+): GuardOptions {
+  return {
+    getSubject: options.getSubject,
+    getResource: options.getResource,
+    getContext: options.getContext,
+    denyUnannotatedRoutes: options.denyUnannotatedRoutes ?? true,
+  };
+}
+
+const guardProvider = {
+  provide: RbacGuard,
+  useFactory: (
+    reflector: Reflector,
+    rbacInstance: RBAC,
+    resolved: GuardOptions
+  ) => new RbacGuard(reflector, rbacInstance, resolved),
+  inject: [Reflector, RBAC_INSTANCE, RBAC_GUARD_OPTIONS],
+};
+
+@Global()
 @Module({})
 export class RbacModule {
   static forRoot(options: NestRbacModuleOptions) {
@@ -163,30 +197,50 @@ export class RbacModule {
 
     options.configure?.(rbac);
 
-    const guardOptions: GuardOptions = {
-      getSubject: options.getSubject,
-      getResource: options.getResource,
-      getContext: options.getContext,
-      denyUnannotatedRoutes: options.denyUnannotatedRoutes ?? true,
-    };
-
     return {
       module: RbacModule,
       providers: [
         Reflector,
         { provide: RBAC_INSTANCE, useValue: rbac },
-        { provide: RBAC_GUARD_OPTIONS, useValue: guardOptions },
-        {
-          provide: RbacGuard,
-          useFactory: (
-            reflector: Reflector,
-            rbacInstance: RBAC,
-            resolved: GuardOptions
-          ) => new RbacGuard(reflector, rbacInstance, resolved),
-          inject: [Reflector, RBAC_INSTANCE, RBAC_GUARD_OPTIONS],
-        },
+        { provide: RBAC_GUARD_OPTIONS, useValue: guardOptionsFrom(options) },
+        guardProvider,
       ],
       exports: [RbacGuard, RBAC_INSTANCE],
+    };
+  }
+
+  static forRootAsync(options: NestRbacModuleAsyncOptions) {
+    return {
+      module: RbacModule,
+      providers: [
+        Reflector,
+        { provide: RBAC_STORE, useValue: options.store },
+        {
+          provide: RBAC_INSTANCE,
+          useFactory: async () => {
+            const rbac = await createRBACFromStore(options.store, {
+              onDecision: options.onDecision,
+            });
+            await options.configure?.(rbac);
+            return rbac;
+          },
+        },
+        { provide: RBAC_GUARD_OPTIONS, useValue: guardOptionsFrom(options) },
+        guardProvider,
+      ],
+      exports: [RbacGuard, RBAC_INSTANCE, RBAC_STORE],
+    };
+  }
+}
+
+@Module({
+  controllers: [RbacAdminController],
+})
+export class RbacAdminModule {
+  static register() {
+    return {
+      module: RbacAdminModule,
+      controllers: [RbacAdminController],
     };
   }
 }

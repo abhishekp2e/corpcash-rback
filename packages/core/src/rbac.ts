@@ -31,43 +31,74 @@ interface PreparedRequest {
   resourceType?: string;
 }
 
+export type RBACReloadConfig = Pick<
+  RBACConfig,
+  "roles" | "permissions" | "strictRoles"
+>;
+
+interface CompiledConfig {
+  compiledRoles?: CompiledRoles;
+  directPermissions?: ParsedPermission[];
+  invalidPermissions: readonly string[];
+}
+
+function compileConfig(config: RBACReloadConfig): CompiledConfig {
+  const roles = config.roles ?? {};
+  const hasRoles = Object.keys(roles).length > 0;
+
+  if (hasRoles && config.permissions) {
+    throw new InvalidRBACConfigError(
+      "Provide either `roles` or `permissions`, not both. " +
+        "`permissions` is the permission-only mode used on the frontend."
+    );
+  }
+
+  let compiledRoles: CompiledRoles | undefined;
+  let directPermissions: ParsedPermission[] | undefined;
+  let invalidPermissions: readonly string[] = [];
+
+  if (hasRoles) {
+    compiledRoles = new CompiledRoles(roles, config.strictRoles ?? false);
+  }
+
+  if (config.permissions) {
+    const { parsed, invalid } = normalizePermissionsLenient(config.permissions);
+    directPermissions = parsed;
+    invalidPermissions = invalid;
+  }
+
+  return { compiledRoles, directPermissions, invalidPermissions };
+}
+
 export class RBAC {
-  private readonly compiledRoles?: CompiledRoles;
-  private readonly directPermissions?: ParsedPermission[];
+  private compiledRoles?: CompiledRoles;
+  private directPermissions?: ParsedPermission[];
   private readonly policyEvaluator = new PolicyEvaluator();
   private readonly onDecision?: DecisionListener;
+  private _invalidPermissions: readonly string[] = [];
   /** Entries of `config.permissions` that were not valid `resource:action` strings. */
-  readonly invalidPermissions: readonly string[];
+  get invalidPermissions(): readonly string[] {
+    return this._invalidPermissions;
+  }
 
   constructor(config: RBACConfig) {
-    const roles = config.roles ?? {};
-    const hasRoles = Object.keys(roles).length > 0;
-
-    if (hasRoles && config.permissions) {
-      throw new InvalidRBACConfigError(
-        "Provide either `roles` or `permissions`, not both. " +
-          "`permissions` is the permission-only mode used on the frontend."
-      );
-    }
-
-    if (hasRoles) {
-      this.compiledRoles = new CompiledRoles(
-        roles,
-        config.strictRoles ?? false
-      );
-    }
-
-    if (config.permissions) {
-      const { parsed, invalid } = normalizePermissionsLenient(
-        config.permissions
-      );
-      this.directPermissions = parsed;
-      this.invalidPermissions = invalid;
-    } else {
-      this.invalidPermissions = [];
-    }
-
+    this.applyCompiled(compileConfig(config));
     this.onDecision = config.onDecision;
+  }
+
+  /**
+   * Replaces the role graph or direct permissions. Registered policies and
+   * `onDecision` stay attached. Throws before mutating if the new config is
+   * invalid, so a bad reload leaves the previous compiled state in place.
+   */
+  reload(config: RBACReloadConfig): void {
+    this.applyCompiled(compileConfig(config));
+  }
+
+  private applyCompiled(compiled: CompiledConfig): void {
+    this.compiledRoles = compiled.compiledRoles;
+    this.directPermissions = compiled.directPermissions;
+    this._invalidPermissions = compiled.invalidPermissions;
   }
 
   registerPolicy(key: string, fn: PolicyFn): void {

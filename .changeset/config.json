@@ -3,7 +3,12 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [
-    ["@corpcash/rbac-core", "@corpcash/rbac-node", "@corpcash/rbac-react"]
+    [
+      "@corpcash/rbac-core",
+      "@corpcash/rbac-node",
+      "@corpcash/rbac-react",
+      "@corpcash/rbac-store"
+    ]
   ],
   "linked": [],
   "access": "public",
