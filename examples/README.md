@@ -1,5 +1,7 @@
 # Examples
 
+Full library guide: [`../README.md`](../README.md).
+
 Five runnable apps. The two API examples share one role configuration and one
 wallet store so their behaviour can be compared side by side; the two UI
 examples run in permission-only mode, which is how a browser should use this

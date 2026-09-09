@@ -1,184 +1,400 @@
 # @corpcash/rbac-core
 
-Framework-agnostic RBAC authorization engine.
+Framework-agnostic authorization engine. Decisions happen here, in memory:
 
-## Installation
+**subject + action + resource + context → allow / deny**
+
+Node, store, and React are thin adapters over this package.
+
+- [Install](#install)
+- [Flow](#flow)
+- [Concepts](#concepts)
+- [1. Construct the engine](#1-construct-the-engine)
+- [2. Register policies](#2-register-policies)
+- [3. Decide](#3-decide)
+- [RBAC methods](#rbac-methods)
+- [Helpers](#helpers)
+- [Errors](#errors)
+- [Types](#types)
+
+## Install
 
 ```bash
-npm install @corpcash/rbac-core
+npm install @corpcash/rbac-core@^0.3.0
 ```
+
+## Flow
+
+The package does not load config from disk or a database. You construct an
+`RBAC` instance, optionally register policies, then call `authorize` /
+`can` on every decision.
+
+```
+1. new RBAC({ roles }) or new RBAC({ permissions })
+2. rbac.registerPolicyFor(...)   ← instance rules; stay in code
+3. rbac.authorize({ subject, action, resource, context? })
+4. Hand the UI rbac.getEffectivePermissions(subject)
+5. After a role-graph change: rbac.reload(nextConfig)
+```
+
+Evaluation order:
+
+1. Resolve the subject (`id` required)
+2. Expand roles (inheritance)
+3. Match `resource:action` (wildcards allowed)
+4. Run every matching policy — all must pass
+5. Default deny if the permission is missing or a policy fails
+
+Policies can only **narrow** a grant. They never add a permission.
+
+To persist roles, use [`@corpcash/rbac-store`](../store). To put this on HTTP,
+use [`@corpcash/rbac-node`](../node). For UI gates, use
+[`@corpcash/rbac-react`](../react).
 
 ## Concepts
 
-| Concept        | Description                                              |
-| -------------- | -------------------------------------------------------- |
-| **Subject**    | Who is requesting (`id`, `roles`, optional `attributes`) |
-| **Role**       | Named permission collection with optional inheritance    |
-| **Permission** | `resource:action` (e.g. `wallet:read`)                   |
-| **Resource**   | String type or instance `{ type, id, ... }`              |
-| **Action**     | Arbitrary operation string                               |
-| **Policy**     | Optional condition after permission match                |
+| Concept        | Meaning                                | Example                                      |
+| -------------- | -------------------------------------- | -------------------------------------------- |
+| **Subject**    | Who is asking                          | `{ id: "u1", roles: ["developer"] }`         |
+| **Role**       | Named permissions, optional `inherits` | `developer` inherits `viewer`                |
+| **Permission** | `resource:action`                      | `wallet:read`, `*:*`                         |
+| **Action**     | Operation string                       | `read`, `delete`, `deploy`                   |
+| **Resource**   | Type or instance                       | `"wallet"` or `{ type: "wallet", id: "w1" }` |
+| **Policy**     | Extra check after a permission match   | owner of the wallet                          |
 
-## Usage
+Wildcards: `wallet:*` (all actions on wallet), `*:read` (read anything),
+`*:*` (everything).
+
+---
+
+## 1. Construct the engine
 
 ```typescript
 import { RBAC } from "@corpcash/rbac-core";
 
 const rbac = new RBAC({
   roles: {
-    admin: { permissions: ["*:*"] },
+    viewer: { permissions: ["wallet:read", "transaction:read"] },
     developer: {
       inherits: ["viewer"],
-      permissions: ["wallet:create"],
+      permissions: ["wallet:create", "wallet:delete", "contract:deploy"],
     },
-    viewer: { permissions: ["wallet:read"] },
+    admin: { permissions: ["*:*"] },
+  },
+  strictRoles: false,
+  onDecision: ({ request, result, durationMs }) => {
+    logger.info({ subject: request.subject.id, ...result, durationMs });
   },
 });
-
-// Shorthand
-rbac.can(subject, "read", "wallet");
-
-// Rich result
-const result = rbac.authorize({
-  subject,
-  action: "delete",
-  resource: { type: "wallet", id: "w1", ownerId: "u1" },
-  context: { tenantId: "org_1" },
-});
-// { allowed, reason, matchedRole, matchedPermission, ignoredRoles? }
 ```
 
-## Reload after a config change
+`onDecision` exceptions are swallowed so a broken logger cannot change a
+decision.
 
-`reload()` replaces the compiled role graph or permission list. Registered
-policies and `onDecision` stay attached. If the new config is invalid the
-previous compiled state is left in place.
-
-```typescript
-rbac.reload(await store.loadConfig());
-```
-
-To persist that config, use [`@corpcash/rbac-store`](../store) and
-`reloadFromStore(rbac, store)` after admin writes.
-
-## Configuration is validated at construction
-
-`new RBAC(...)` throws immediately on a bad configuration, so a broken deploy
-fails at startup rather than on the first request that touches the bad branch:
-
-- `CircularRoleInheritanceError` — a cycle anywhere in the role graph
-- `InvalidRBACConfigError` — an `inherits` entry with no definition, or `roles`
-  and `permissions` supplied together
-- `InvalidPermissionError` — a role permission that is not `resource:action`
-
-## Unknown roles are ignored, not fatal
-
-A subject can arrive with a role you have since deleted — a token issued before
-the last deploy, for instance. Those roles are skipped, the decision is made on
-the remaining ones, and the skipped names are reported:
+**Role mode** (`roles`) and **permission-only mode** (`permissions`) cannot be
+combined. Permission-only is what the frontend uses after
+`GET /me/authorization`:
 
 ```typescript
-const result = rbac.authorize({
-  subject: { id: "u1", roles: ["viewer", "legacy_ops"] },
-  action: "read",
-  resource: "wallet",
-});
-// { allowed: true, matchedRole: "viewer", ignoredRoles: ["legacy_ops"] }
-```
-
-Set `strictRoles: true` to get an `UnknownRoleError` instead. Do that only where
-you can handle the throw; on a request path it turns an authorization failure
-into a server error.
-
-## Policies
-
-Policies run **after** a permission matched, and they can only narrow the grant:
-
-- A policy never grants something the permissions did not.
-- Every policy whose key matches the request must pass. Keys are checked in
-  order of specificity — `wallet:delete`, `wallet:*`, `*:delete`, `*:*` — and all
-  registered matches must return `true`.
-
-```typescript
-rbac.registerPolicyFor("wallet", "delete", ({ subject, resource }) => {
-  return typeof resource === "object" && subject.id === resource.ownerId;
+const ui = new RBAC({
+  permissions: ["wallet:read", "wallet:create"],
 });
 ```
 
-### Async policies
+Malformed entries in `permissions` are skipped (fail closed) and listed on
+`rbac.invalidPermissions`. Role-mode permissions that are not
+`resource:action` throw at construction.
 
-Ownership usually has to be loaded. Return a promise and use the async API:
+Configuration is validated when the engine is constructed — cycles, dangling
+`inherits`, and bad role permissions fail at startup.
+
+---
+
+## 2. Register policies
 
 ```typescript
 rbac.registerPolicyFor("wallet", "delete", async ({ subject, resource }) => {
+  if (typeof resource !== "object") return false;
   const wallet = await wallets.findById(String(resource.id));
   return wallet?.ownerId === subject.id;
 });
 
-await rbac.authorizeAsync({ subject, action: "delete", resource });
-await rbac.canAsync(subject, "delete", resource);
-```
-
-The synchronous `authorize()` throws `AsyncPolicyError` if a matching policy
-returns a promise, rather than silently treating it as `true`.
-
-## Auditing
-
-`onDecision` receives every decision, allowed or denied. Exceptions thrown by
-the listener are swallowed, so a broken log sink cannot change a decision:
-
-```typescript
-const rbac = new RBAC({
-  roles,
-  onDecision: ({ request, result, durationMs }) => {
-    logger.info({
-      subject: request.subject.id,
-      action: result.action,
-      resource: result.resource,
-      allowed: result.allowed,
-      reason: result.reason,
-      matchedRole: result.matchedRole,
-      durationMs,
-    });
-  },
+// Same thing with an explicit key
+rbac.registerPolicy("transaction:approve", ({ subject, resource, context }) => {
+  return subject.attributes?.organizationId === context?.organizationId;
 });
 ```
 
-## Frontend permissions
+Matching keys, most specific first: `wallet:delete`, `wallet:*`, `*:delete`,
+`*:*`. Every registered match must return `true`.
+
+`reload()` keeps policies and `onDecision`. Register policies once at startup.
+
+---
+
+## 3. Decide
 
 ```typescript
-rbac.getEffectivePermissions(subject); // ["wallet:read", "wallet:create", …]
+const subject = { id: "u1", roles: ["developer"] };
+
+rbac.can(subject, "read", "wallet"); // true
+
+const result = rbac.authorize({
+  subject,
+  action: "delete",
+  resource: { type: "wallet", id: "w1" },
+  context: { tenantId: "org_1" },
+});
+// { allowed, reason, resource, action, matchedRole?, matchedPermission?, ignoredRoles? }
+
+await rbac.canAsync(subject, "delete", { type: "wallet", id: "w1" });
+await rbac.authorizeAsync({ subject, action: "delete", resource });
 ```
 
-This expands roles and inheritance but **does not apply policies**, so treat it
-as an upper bound: the backend can still deny an action that appears in the
-list. Use it to drive what the UI shows, never as the authorization decision.
+Use the async pair whenever a matching policy returns a promise. Sync
+`authorize()` / `can()` throw `AsyncPolicyError` in that case.
 
-`getEffectiveRoles(subject)` and `hasRole(subject, role)` expand inheritance the
-same way.
+A subject carrying a role that no longer exists is denied on that role, not
+thrown at: the unknown role is skipped and reported in `result.ignoredRoles`.
+Set `strictRoles: true` to throw `UnknownRoleError` instead.
 
-## Permission-only mode
+---
 
-Pass `permissions` instead of `roles` when the caller already holds a resolved
-list (a browser holding the response of `GET /me/authorization`). Entries that
-are not valid `resource:action` strings are skipped instead of throwing, and are
-listed on `rbac.invalidPermissions`.
+## RBAC methods
 
-## Wildcards
+### `constructor(config)` / `new RBAC(config)`
 
-- `wallet:*` — all actions on wallet
-- `*:read` — read any resource
-- `*:*` — full access
+| Field         | Purpose                                               |
+| ------------- | ----------------------------------------------------- |
+| `roles`       | Role graph. Each value: `{ permissions?, inherits? }` |
+| `permissions` | Flat list for the UI. Not with `roles`                |
+| `strictRoles` | Default `false`: skip unknown subject roles           |
+| `onDecision`  | Called after every decision                           |
 
-## Default deny
+### `can(subject, action, resource)`
 
-Missing permissions always result in denial.
+Sync boolean. Same as `authorize(...).allowed`.
 
-## Performance
+```typescript
+rbac.can(user, "read", "wallet");
+rbac.can(user, "delete", { type: "wallet", id: "w1" });
+```
 
-Role permissions are parsed once at construction and inheritance closures are
-cached, so a decision is a map lookup and a short scan. `pnpm bench` measures it
-against a 21-role inheritance chain.
+### `canAsync(subject, action, resource)`
+
+Async boolean. Awaits policies.
+
+```typescript
+await rbac.canAsync(user, "delete", { type: "wallet", id: "w1" });
+```
+
+### `authorize(request)`
+
+Sync `{ allowed, reason, ... }`.
+
+```typescript
+rbac.authorize({
+  subject: user,
+  action: "deploy",
+  resource: "contract",
+  context: { tenantId: "org_1" },
+});
+```
+
+`reason`: `AUTHORIZED` | `MISSING_PERMISSION` | `POLICY_DENIED` | `NO_SUBJECT`.
+
+### `authorizeAsync(request)`
+
+Same result, awaits policies. Express/Nest adapters use this.
+
+### `registerPolicyFor(resource, action, fn)`
+
+Register a policy for `resource:action` (wildcards allowed in the key).
+
+```typescript
+rbac.registerPolicyFor("wallet", "delete", ownershipPolicy);
+rbac.registerPolicyFor(
+  "wallet",
+  "*",
+  ({ subject }) => subject.id !== "blocked"
+);
+```
+
+`fn` receives `{ subject, action, resource, resourceType, context? }` and
+returns `boolean | Promise<boolean>`.
+
+### `registerPolicy(key, fn)`
+
+Same, key is the string `"resource:action"`.
+
+```typescript
+rbac.registerPolicy("wallet:delete", ownershipPolicy);
+```
+
+### `reload(config)`
+
+Replace compiled roles or the permission list. Policies and `onDecision`
+stay. Invalid config throws and the previous graph remains.
+
+```typescript
+rbac.reload({
+  roles: {
+    viewer: { permissions: ["wallet:read"] },
+    admin: { permissions: ["*:*"] },
+  },
+  strictRoles: false,
+});
+```
+
+With a store: `reloadFromStore(rbac, store)` (see
+[`@corpcash/rbac-store`](../store)).
+
+### `getEffectivePermissions(subject)`
+
+Flat list for the frontend. Expands inheritance, **not** policies.
+
+```typescript
+rbac.getEffectivePermissions(user);
+// ["wallet:read", "wallet:create", "wallet:delete", "contract:deploy"]
+```
+
+### `getEffectiveRoles(subject)`
+
+Roles including inheritance.
+
+```typescript
+rbac.getEffectiveRoles({ id: "u1", roles: ["developer"] });
+// ["developer", "viewer"]
+```
+
+### `hasRole(subject, role)`
+
+Inheritance-aware membership.
+
+```typescript
+rbac.hasRole(user, "viewer"); // true if user is developer → viewer
+```
+
+### `invalidPermissions`
+
+Skipped entries in permission-only mode.
+
+```typescript
+const ui = new RBAC({ permissions: ["wallet:read", "not-a-permission"] });
+ui.invalidPermissions; // ["not-a-permission"]
+```
+
+---
+
+## Helpers
+
+### `parsePermission(permission)` / `tryParsePermission(permission)`
+
+```typescript
+import {
+  parsePermission,
+  tryParsePermission,
+  formatPermission,
+} from "@corpcash/rbac-core";
+
+parsePermission("wallet:read");
+// { resource: "wallet", action: "read" }
+
+tryParsePermission("nope"); // undefined
+parsePermission("nope"); // throws InvalidPermissionError
+
+formatPermission("wallet", "read"); // "wallet:read"
+```
+
+### `validateRoleGraph(roles)`
+
+Walks inheritance before you persist or construct. Throws
+`InvalidRBACConfigError` or `CircularRoleInheritanceError`.
+
+```typescript
+import { validateRoleGraph } from "@corpcash/rbac-core";
+
+validateRoleGraph({
+  viewer: { permissions: ["wallet:read"] },
+  developer: { inherits: ["viewer"], permissions: ["wallet:create"] },
+});
+```
+
+The store adapters call this before commit.
+
+### `getResourceType(resource)`
+
+```typescript
+import { getResourceType } from "@corpcash/rbac-core";
+
+getResourceType("wallet"); // "wallet"
+getResourceType({ type: "wallet", id: "w1" }); // "wallet"
+```
+
+---
+
+## Errors
+
+| Error                          | When                                                  |
+| ------------------------------ | ----------------------------------------------------- |
+| `InvalidRBACConfigError`       | `roles` + `permissions` together, dangling `inherits` |
+| `CircularRoleInheritanceError` | Cycle in the role graph                               |
+| `InvalidPermissionError`       | Permission is not `resource:action` (role mode)       |
+| `UnknownRoleError`             | Unknown subject role and `strictRoles: true`          |
+| `AsyncPolicyError`             | Async policy used with sync `authorize()` / `can()`   |
+
+```typescript
+import {
+  AsyncPolicyError,
+  CircularRoleInheritanceError,
+  InvalidPermissionError,
+  InvalidRBACConfigError,
+  UnknownRoleError,
+} from "@corpcash/rbac-core";
+```
+
+---
+
+## Types
+
+```typescript
+interface Subject {
+  id: string;
+  roles: string[];
+  attributes?: Record<string, unknown>;
+}
+
+type Resource = string | { type: string; id?: string; [key: string]: unknown };
+
+interface AuthorizationRequest {
+  subject: Subject;
+  action: string;
+  resource: Resource;
+  context?: Record<string, unknown>;
+}
+
+interface AuthorizationResult {
+  allowed: boolean;
+  reason: "AUTHORIZED" | "MISSING_PERMISSION" | "POLICY_DENIED" | "NO_SUBJECT";
+  resource: string;
+  action: string;
+  matchedRole?: string;
+  matchedPermission?: string;
+  ignoredRoles?: string[];
+}
+
+interface PolicyContext {
+  subject: Subject;
+  action: string;
+  resource: Resource;
+  resourceType: string;
+  context?: Record<string, unknown>;
+}
+```
+
+Also exported: `RBACConfig`, `RBACReloadConfig`, `RoleDefinition`,
+`DecisionListener`, `AuthorizationDecision`, `PolicyFn`, `Action`,
+`ResourceInstance`.
 
 ## License
 
