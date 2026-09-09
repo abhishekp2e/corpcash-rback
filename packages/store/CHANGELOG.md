@@ -1,5 +1,13 @@
 # @corpcash/rbac-store
 
+## 0.3.1
+
+### Patch Changes
+
+- Require Node.js 22+ and document the full implementation flow for core, node, react, and store.
+- Updated dependencies
+  - @corpcash/rbac-core@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

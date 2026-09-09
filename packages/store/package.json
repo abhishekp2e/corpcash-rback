@@ -1,6 +1,6 @@
 {
   "name": "@corpcash/rbac-store",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Database adapters for persisting @corpcash/rbac-core role graphs",
   "license": "MIT",
   "author": "Corpcash",

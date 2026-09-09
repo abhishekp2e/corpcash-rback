@@ -14,7 +14,7 @@ This page is the consolidated guide: overview, integration, APIs, and UI.
 | [`@corpcash/rbac-store`](./packages/store) | Persist roles and assignments in Postgres, MySQL, or MongoDB. |
 | [`@corpcash/rbac-react`](./packages/react) | Provider, hooks, and gates. **UX only — not security.**       |
 
-Current release: **0.3.0**.
+Current release: **0.3.1**.
 
 ```
                          @corpcash/rbac-core
